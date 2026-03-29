@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic-settings
+google-genai
+httpx
+python-dotenv

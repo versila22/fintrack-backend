@@ -1,4 +1,27 @@
-# FinTrack Backend
+# 💰 FinTrack Backend
+
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-latest-green?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Gemini 2.5 Flash](https://img.shields.io/badge/Gemini-2.5%20Flash-orange?logo=google)](https://deepmind.google/technologies/gemini/)
+[![Open Banking](https://img.shields.io/badge/Open%20Banking-Powens-6366f1)](https://www.powens.com/)
+[![License](https://img.shields.io/badge/License-Personal%20Use-lightgrey)](LICENSE)
+
+> **API REST de gestion budgétaire personnelle avec open banking (Powens), catégorisation IA et insights Gemini 2.5 Flash.**
+
+---
+
+## 🎯 Compétences démontrées
+
+| Domaine | Implémentation |
+|---------|----------------|
+| **Open Banking** | Intégration Powens (agrégation bancaire) — mode démo automatique si clés invalides |
+| **LLM appliqué** | Gemini 2.5 Flash pour insights budgétaires enrichis + catégorisation hybride |
+| **API REST** | FastAPI + SQLModel + SQLite — endpoints complets avec documentation OpenAPI |
+| **FinOps IA** | Suivi des budgets API par fournisseur avec seuils configurables dans l'UI |
+| **Architecture propre** | Séparation modèles / routeurs / config, mode demo/live transparent |
+| **Données de démo** | Seed automatique pour une démo entretien sans dépendances externes |
+
+---
 
 API REST FastAPI pour l'application FinTrack — gestion budgétaire personnelle avec open banking Powens et insights Gemini.
 

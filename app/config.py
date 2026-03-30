@@ -1,3 +1,4 @@
+import secrets
 from pydantic_settings import BaseSettings
 
 
@@ -10,6 +11,9 @@ class Settings(BaseSettings):
     api_budget_total: float = 100.0
     salary_amount: float = 3500.0
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    # Auth
+    jwt_secret: str = secrets.token_hex(32)  # override via JWT_SECRET env var in prod
+    jwt_expire_days: int = 30
 
     class Config:
         env_file = ".env"

@@ -4,14 +4,19 @@ All FinTrack API endpoints in a single router.
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
 from .database import get_session
-from .models import Account, Transaction, Category, Subscription, APIBudget
+from .models import (
+    Account, Transaction, Category, Subscription, APIBudget,
+    User, UserCreate, UserRead, Token,
+)
 from .config import settings
 from .insights import generate_insights
 from .powens import powens_client
 from .categorizer import categorize
+from .auth import hash_password, verify_password, create_access_token, get_current_user
 
 router = APIRouter()
 
@@ -28,12 +33,48 @@ def health():
 
 
 # ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+@router.post("/auth/register", response_model=UserRead, status_code=201)
+def register(payload: UserCreate, session: Session = Depends(get_session)):
+    existing = session.exec(select(User).where(User.email == payload.email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email déjà utilisé")
+    user = User(email=payload.email, hashed_password=hash_password(payload.password))
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
+@router.post("/auth/login", response_model=Token)
+def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    session: Session = Depends(get_session),
+):
+    user = session.exec(select(User).where(User.email == form.username)).first()
+    if not user or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    token = create_access_token(user.id)
+    return Token(access_token=token)
+
+
+@router.get("/auth/me", response_model=UserRead)
+def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+# ---------------------------------------------------------------------------
 # Accounts
 # ---------------------------------------------------------------------------
 
 @router.get("/accounts", response_model=list[Account])
-def list_accounts(session: Session = Depends(get_session)):
-    return session.exec(select(Account)).all()
+def list_accounts(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return session.exec(select(Account).where(Account.user_id == current_user.id)).all()
 
 
 # ---------------------------------------------------------------------------
@@ -46,8 +87,9 @@ def list_transactions(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Transaction)
+    stmt = select(Transaction).where(Transaction.user_id == current_user.id)
     if account_id:
         stmt = stmt.where(Transaction.account_id == account_id)
     stmt = stmt.order_by(Transaction.date.desc()).offset(offset).limit(limit)
@@ -55,11 +97,16 @@ def list_transactions(
 
 
 @router.get("/transactions/stats")
-def transaction_stats(session: Session = Depends(get_session)):
+def transaction_stats(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     today = date.today()
     month_str = today.strftime("%Y-%m")
 
-    transactions = session.exec(select(Transaction)).all()
+    transactions = session.exec(
+        select(Transaction).where(Transaction.user_id == current_user.id)
+    ).all()
     month_txs = [
         tx for tx in transactions
         if tx.date.year == today.year and tx.date.month == today.month
@@ -90,12 +137,22 @@ def transaction_stats(session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 
 @router.get("/subscriptions", response_model=list[Subscription])
-def list_subscriptions(session: Session = Depends(get_session)):
-    return session.exec(select(Subscription)).all()
+def list_subscriptions(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return session.exec(
+        select(Subscription).where(Subscription.user_id == current_user.id)
+    ).all()
 
 
 @router.post("/subscriptions", response_model=Subscription)
-def create_subscription(sub: Subscription, session: Session = Depends(get_session)):
+def create_subscription(
+    sub: Subscription,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    sub.user_id = current_user.id
     session.add(sub)
     session.commit()
     session.refresh(sub)
@@ -107,8 +164,13 @@ def create_subscription(sub: Subscription, session: Session = Depends(get_sessio
 # ---------------------------------------------------------------------------
 
 @router.get("/api-budget")
-def get_api_budget(session: Session = Depends(get_session)):
-    budgets = session.exec(select(APIBudget)).all()
+def get_api_budget(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    budgets = session.exec(
+        select(APIBudget).where(APIBudget.user_id == current_user.id)
+    ).all()
     total_budget = sum(b.monthly_budget for b in budgets)
     total_spent = sum(b.current_month_spent for b in budgets)
     percentage = round((total_spent / total_budget * 100) if total_budget > 0 else 0.0, 1)
@@ -121,8 +183,17 @@ def get_api_budget(session: Session = Depends(get_session)):
 
 
 @router.put("/api-budget/{provider}", response_model=APIBudget)
-def update_api_budget(provider: str, monthly_budget: float, session: Session = Depends(get_session)):
-    budget = session.exec(select(APIBudget).where(APIBudget.provider == provider)).first()
+def update_api_budget(
+    provider: str,
+    monthly_budget: float,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    budget = session.exec(
+        select(APIBudget)
+        .where(APIBudget.provider == provider)
+        .where(APIBudget.user_id == current_user.id)
+    ).first()
     if not budget:
         raise HTTPException(status_code=404, detail=f"Provider '{provider}' not found")
     budget.monthly_budget = monthly_budget
@@ -137,8 +208,13 @@ def update_api_budget(provider: str, monthly_budget: float, session: Session = D
 # ---------------------------------------------------------------------------
 
 @router.get("/insights")
-def get_insights(session: Session = Depends(get_session)):
-    transactions = session.exec(select(Transaction)).all()
+def get_insights(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    transactions = session.exec(
+        select(Transaction).where(Transaction.user_id == current_user.id)
+    ).all()
     return generate_insights(transactions, settings.salary_amount)
 
 
@@ -147,7 +223,10 @@ def get_insights(session: Session = Depends(get_session)):
 # ---------------------------------------------------------------------------
 
 @router.post("/sync")
-def sync_powens(session: Session = Depends(get_session)):
+def sync_powens(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     accounts = powens_client.get_accounts()
     if accounts is None:
         return {"synced": 0, "mode": "demo"}
@@ -157,6 +236,7 @@ def sync_powens(session: Session = Depends(get_session)):
     for acc in accounts:
         account = Account(
             id=str(acc["id"]),
+            user_id=current_user.id,
             name=acc.get("name", "Compte"),
             type=acc.get("type", "personal"),
             balance=acc.get("balance", 0.0),
@@ -180,6 +260,7 @@ def sync_powens(session: Session = Depends(get_session)):
             tx_date = date.fromisoformat(raw["date"][:10]) if "date" in raw else date.today()
             tx = Transaction(
                 id=tx_id,
+                user_id=current_user.id,
                 account_id=str(acc["id"]),
                 date=tx_date,
                 amount=amount,

@@ -5,3 +5,5 @@ pydantic-settings
 google-genai
 httpx
 python-dotenv
+python-jose[cryptography]
+passlib[bcrypt]

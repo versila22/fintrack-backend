@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from .database import get_session
 from .models import (
-    Account, Transaction, Category, Subscription, APIBudget,
+    Account, Transaction, Subscription, APIBudget,
     User, UserCreate, UserRead, Token,
 )
 from .config import settings

@@ -1,7 +1,7 @@
 """
 JWT authentication helpers for FinTrack.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
@@ -41,7 +41,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
-    expire = datetime.utcnow() + (expires_delta or timedelta(days=settings.jwt_expire_days))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(hours=settings.jwt_expire_hours)
+    )
     payload = {"sub": str(user_id), "exp": expire}
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
 

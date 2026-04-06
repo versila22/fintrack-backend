@@ -1,5 +1,5 @@
 from enum import Enum
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 from sqlmodel import SQLModel, Field
 
@@ -24,7 +24,7 @@ class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     email: str = Field(unique=True, index=True)
     hashed_password: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = True
 
 
@@ -56,7 +56,7 @@ class Account(SQLModel, table=True):
     type: str  # "personal" | "business"
     balance: float = 0.0
     currency: str = "EUR"
-    last_synced: datetime = Field(default_factory=datetime.utcnow)
+    last_synced: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Transaction(SQLModel, table=True):

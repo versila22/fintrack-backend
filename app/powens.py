@@ -16,6 +16,8 @@ class PowensClient:
         self._token: Optional[str] = None
 
     def _authenticate(self) -> Optional[str]:
+        if not self.client_id or not self.client_secret:
+            return None
         try:
             resp = httpx.post(
                 f"{self.base_url}/auth/token",

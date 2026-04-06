@@ -45,8 +45,9 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 # Installer les dépendances
 pip install -r requirements.txt
 
-# Copier et éditer les variables d'environnement (optionnel)
+# Copier et éditer les variables d'environnement
 cp .env.example .env
+# JWT_SECRET est requis ; Powens reste optionnel (mode démo si absent)
 ```
 
 ## Seed (données de démo)
@@ -85,8 +86,9 @@ Documentation interactive : http://localhost:8000/docs
 | Variable | Défaut | Description |
 |----------|--------|-------------|
 | `GEMINI_API_KEY` | `` | Clé Gemini pour insights enrichis (optionnel) |
-| `POWENS_CLIENT_ID` | `71972119` | ID client Powens sandbox |
-| `POWENS_CLIENT_SECRET` | `znKIZM...` | Secret Powens sandbox |
+| `JWT_SECRET` | — | Secret JWT requis pour signer les tokens |
+| `POWENS_CLIENT_ID` | `` | ID client Powens (optionnel, active le mode live) |
+| `POWENS_CLIENT_SECRET` | `` | Secret client Powens (optionnel, active le mode live) |
 | `SALARY_AMOUNT` | `3500.0` | Salaire de référence pour les insights |
 | `API_BUDGET_TOTAL` | `100.0` | Budget total API mensuel |
 

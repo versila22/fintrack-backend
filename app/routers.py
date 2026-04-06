@@ -2,14 +2,18 @@
 All FinTrack API endpoints in a single router.
 """
 from datetime import date
+from uuid import uuid4
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 
 from .database import get_session
 from .models import (
-    Account, Transaction, Subscription, APIBudget,
+    Account, AccountCreate, AccountUpdate,
+    Transaction, TransactionCreate, TransactionUpdate,
+    Subscription, SubscriptionCreate, SubscriptionUpdate,
+    APIBudget, UserCategory, UserCategoryCreate, UserCategoryUpdate,
     User, UserCreate, UserRead, Token,
 )
 from .config import settings
@@ -77,6 +81,74 @@ def list_accounts(
     return session.exec(select(Account).where(Account.user_id == current_user.id)).all()
 
 
+@router.post("/accounts", response_model=Account, status_code=201)
+def create_account(
+    payload: AccountCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = Account(
+        id=f"acc_{uuid4().hex[:12]}",
+        user_id=current_user.id,
+        name=payload.name,
+        type=payload.type,
+        balance=payload.balance,
+        currency=payload.currency,
+    )
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account
+
+
+@router.get("/accounts/{account_id}", response_model=Account)
+def get_account(
+    account_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = session.get(Account, account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+    return account
+
+
+@router.put("/accounts/{account_id}", response_model=Account)
+def update_account(
+    account_id: str,
+    payload: AccountUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = session.get(Account, account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    updates = payload.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(account, key, value)
+
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account
+
+
+@router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    account_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = session.get(Account, account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    session.delete(account)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # ---------------------------------------------------------------------------
 # Transactions
 # ---------------------------------------------------------------------------
@@ -94,6 +166,85 @@ def list_transactions(
         stmt = stmt.where(Transaction.account_id == account_id)
     stmt = stmt.order_by(Transaction.date.desc()).offset(offset).limit(limit)
     return session.exec(stmt).all()
+
+
+@router.post("/transactions", response_model=Transaction, status_code=201)
+def create_transaction(
+    payload: TransactionCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = session.get(Account, payload.account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    transaction = Transaction(
+        id=f"tx_{uuid4().hex[:12]}",
+        user_id=current_user.id,
+        account_id=payload.account_id,
+        date=payload.date,
+        amount=payload.amount,
+        description=payload.description,
+        category=payload.category,
+        is_recurring=payload.is_recurring,
+    )
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
+
+@router.get("/transactions/{transaction_id}", response_model=Transaction)
+def get_transaction(
+    transaction_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    transaction = session.get(Transaction, transaction_id)
+    if not transaction or transaction.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Transaction introuvable")
+    return transaction
+
+
+@router.put("/transactions/{transaction_id}", response_model=Transaction)
+def update_transaction(
+    transaction_id: str,
+    payload: TransactionUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    transaction = session.get(Transaction, transaction_id)
+    if not transaction or transaction.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Transaction introuvable")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "account_id" in updates:
+        account = session.get(Account, updates["account_id"])
+        if not account or account.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    for key, value in updates.items():
+        setattr(transaction, key, value)
+
+    session.add(transaction)
+    session.commit()
+    session.refresh(transaction)
+    return transaction
+
+
+@router.delete("/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_transaction(
+    transaction_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    transaction = session.get(Transaction, transaction_id)
+    if not transaction or transaction.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Transaction introuvable")
+
+    session.delete(transaction)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/transactions/stats")
@@ -146,17 +297,149 @@ def list_subscriptions(
     ).all()
 
 
-@router.post("/subscriptions", response_model=Subscription)
-def create_subscription(
-    sub: Subscription,
+@router.get("/subscriptions/{subscription_id}", response_model=Subscription)
+def get_subscription(
+    subscription_id: int,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    sub.user_id = current_user.id
+    subscription = session.get(Subscription, subscription_id)
+    if not subscription or subscription.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Abonnement introuvable")
+    return subscription
+
+
+@router.post("/subscriptions", response_model=Subscription, status_code=201)
+def create_subscription(
+    payload: SubscriptionCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    account = session.get(Account, payload.account_id)
+    if not account or account.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    sub = Subscription(user_id=current_user.id, **payload.model_dump())
     session.add(sub)
     session.commit()
     session.refresh(sub)
     return sub
+
+
+@router.put("/subscriptions/{subscription_id}", response_model=Subscription)
+def update_subscription(
+    subscription_id: int,
+    payload: SubscriptionUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    subscription = session.get(Subscription, subscription_id)
+    if not subscription or subscription.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Abonnement introuvable")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "account_id" in updates:
+        account = session.get(Account, updates["account_id"])
+        if not account or account.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Compte introuvable")
+
+    for key, value in updates.items():
+        setattr(subscription, key, value)
+
+    session.add(subscription)
+    session.commit()
+    session.refresh(subscription)
+    return subscription
+
+
+@router.delete("/subscriptions/{subscription_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_subscription(
+    subscription_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    subscription = session.get(Subscription, subscription_id)
+    if not subscription or subscription.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Abonnement introuvable")
+
+    session.delete(subscription)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Categories
+# ---------------------------------------------------------------------------
+
+
+@router.get("/categories", response_model=list[UserCategory])
+def list_categories(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return session.exec(
+        select(UserCategory).where(UserCategory.user_id == current_user.id)
+    ).all()
+
+
+@router.post("/categories", response_model=UserCategory, status_code=201)
+def create_category(
+    payload: UserCategoryCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    category = UserCategory(user_id=current_user.id, **payload.model_dump())
+    session.add(category)
+    session.commit()
+    session.refresh(category)
+    return category
+
+
+@router.get("/categories/{category_id}", response_model=UserCategory)
+def get_category(
+    category_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    category = session.get(UserCategory, category_id)
+    if not category or category.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Catégorie introuvable")
+    return category
+
+
+@router.put("/categories/{category_id}", response_model=UserCategory)
+def update_category(
+    category_id: str,
+    payload: UserCategoryUpdate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    category = session.get(UserCategory, category_id)
+    if not category or category.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Catégorie introuvable")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(category, key, value)
+
+    session.add(category)
+    session.commit()
+    session.refresh(category)
+    return category
+
+
+@router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_category(
+    category_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    category = session.get(UserCategory, category_id)
+    if not category or category.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Catégorie introuvable")
+
+    session.delete(category)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ---------------------------------------------------------------------------
